@@ -1,0 +1,624 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>最佳創意獎評選 (多人連線版)</title>
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- React & ReactDOM (Globals) -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+
+    <!-- Babel for JSX -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+
+        .animate-in {
+            animation: fadeIn 0.5s ease-out forwards;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div id="root"></div>
+
+    <!-- Main Application Script -->
+    <!-- data-type="module" allows using import statements inside Babel script -->
+    <script type="text/babel" data-type="module">
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
+        import {
+            getFirestore, collection, doc, onSnapshot, setDoc, updateDoc, increment, getDoc, runTransaction, deleteDoc, getDocs, writeBatch
+        } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+
+        const { useState, useEffect } = React;
+
+        // --- FIREBASE CONFIG ---
+        const firebaseConfig = {
+            apiKey: "AIzaSyAmVRtIfqdOyAYx5mQ1akKnws9CtmbmEAM",
+            authDomain: "vote-free-2025.firebaseapp.com",
+            projectId: "vote-free-2025",
+            storageBucket: "vote-free-2025.firebasestorage.app",
+            messagingSenderId: "776890041892",
+            appId: "1:776890041892:web:3f9bc27c7702b915373ab1"
+        };
+
+        // Initialize Firebase
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+
+        // Constants
+        const APP_ID = 'vote_2025_final';
+        // User provided 20 names, but mentioned 22. We use the provided list.
+        const CANDIDATE_NAMES = [
+            'Ray', 'Amber', 'Clara', 'Rose', '小Jamie', 'Trisha',
+            'Abby', '大Jamie', 'Jojo', 'Ruian', 'Sherry', 'Yuna',
+            'Yuki', 'Dale', 'Mina', 'Yuri', 'Joyce', 'Arwen', 'Janice', '諶爸'
+        ];
+
+        const CATEGORIES = {
+            creative: { id: 'creative', label: '最佳創意獎', icon: 'Lightbulb', color: 'text-yellow-500', bg: 'bg-yellow-100', ring: 'ring-yellow-400' },
+            diligent: { id: 'diligent', label: '最用心獎', icon: 'Heart', color: 'text-pink-500', bg: 'bg-pink-100', ring: 'ring-pink-400' },
+            favor: { id: 'favor', label: '好感度獎', icon: 'ThumbsUp', color: 'text-blue-500', bg: 'bg-blue-100', ring: 'ring-blue-400' },
+        };
+
+        // --- ICONS ---
+        const IconPaths = {
+            Trophy: <path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6m12 0h1.5a2.5 2.5 0 0 1 0 5H18M4 22h16v-3H4v3zm2-3V9a5 5 0 0 1 12 0v10" />,
+            CheckCircle2: <path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10zM15 8l-6 6-3-3" />,
+            PartyPopper: <path d="M5.8 11.3 2 22l10.7-3.79M4 3h.01M22 8h.01M15 2h.01M22 20h.01m-9.9 2h.01M11 2h.01m-5 9h.01M17.2 4.6 22 2l-2.4 4.8 2.2 2-5 .6-.6 5-4.8-2.4L9 14.2 8.4 9.2 4.6 8.6l4.8-2.4L9 1.2l2.4 4.8Z" />,
+            User: <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2m8-10a4 4 0 1 0 0-8 4 4 0 0 0 0 8z" />,
+            AlertCircle: <path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10zm-1-11v6m0 4h.01" />,
+            Lightbulb: <path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-1 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5m4 0v3a2 2 0 0 1-2 2h-2a2 2 0 0 1-2-2v-3m2-3h2" />,
+            Heart: <path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z" />,
+            ThumbsUp: <path d="M7 10v12m0-12-6 6v6h19.5a2.5 2.5 0 0 0 2.5-2.5v-3.5a2.5 2.5 0 0 0-1-2l-1-1a2.5 2.5 0 0 0-1-1H14l1-6.4a2 2 0 0 0-4 0L7 10z" />,
+            Crown: <path d="m2 4 3 12h14l3-12-6 7-4-7-4 7-6-7zm3 16h14" />,
+        };
+
+        const Icon = ({ name, className, ...props }) => {
+            const path = IconPaths[name];
+            return <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className} {...props}>{path}</svg>;
+        };
+
+        // --- APP COMPONENT ---
+        function BestIdeaVotingApp() {
+            // User State
+            const [user, setUser] = useState(null);
+            const [userNameInput, setUserNameInput] = useState('');
+
+            // Data State
+            const [candidates, setCandidates] = useState([]);
+            const [userVote, setUserVote] = useState(null);
+            const [totalVoters, setTotalVoters] = useState(0);
+
+            // Voting UI State
+            const [selections, setSelections] = useState({ creative: null, diligent: null, favor: null });
+            const [isSubmitting, setIsSubmitting] = useState(false);
+            const [errorMsg, setErrorMsg] = useState('');
+
+            // 1. Auth / User Session Setup
+            useEffect(() => {
+                // Simple Local Session Persistence
+                const storedUser = localStorage.getItem('voting_user_session');
+                if (storedUser) {
+                    setUser(JSON.parse(storedUser));
+                }
+            }, []);
+
+            // 2. Real-time Data Listeners
+            useEffect(() => {
+                // (A) Listen to Candidates
+                // Collection: artifacts/{APP_ID}/candidates
+                const candidatesRef = collection(db, 'artifacts', APP_ID, 'candidates');
+                const unsubCandidates = onSnapshot(candidatesRef, (snapshot) => {
+                    if (snapshot.empty) {
+                        // First time run? Auto-seed data
+                        seedDatabase();
+                    } else {
+                        const list = snapshot.docs.map(d => d.data());
+                        // Sort by original index to keep order consistent
+                        list.sort((a, b) => a.index - b.index);
+                        setCandidates(list);
+                    }
+                });
+
+                // (B) Listen to Global Stats
+                const statsRef = doc(db, 'artifacts', APP_ID, 'stats', 'global');
+                const unsubStats = onSnapshot(statsRef, (docSnap) => {
+                    if (docSnap.exists()) {
+                        setTotalVoters(docSnap.data().voterCount || 0);
+                    }
+                });
+
+                return () => {
+                    unsubCandidates();
+                    unsubStats();
+                };
+            }, []);
+
+            // 3. Listen to My Vote (if logged in)
+            useEffect(() => {
+                if (!user) return;
+                const myVoteRef = doc(db, 'artifacts', APP_ID, 'votes', user.uid);
+                const unsubVote = onSnapshot(myVoteRef, (docSnap) => {
+                    if (docSnap.exists()) {
+                        setUserVote(docSnap.data());
+                    } else {
+                        setUserVote(null);
+                    }
+                });
+                return () => unsubVote();
+            }, [user]);
+
+            // --- Actions ---
+
+            const seedDatabase = async () => {
+                // Check if stats exists to prevent double seeding race condition roughly
+                const statsRef = doc(db, 'artifacts', APP_ID, 'stats', 'global');
+                const statsSnap = await getDoc(statsRef);
+                if (statsSnap.exists()) return;
+
+                console.log("Seeding database...");
+                const batch = CANDIDATE_NAMES.map((name, index) => ({
+                    id: `cand_${index}`,
+                    index: index,
+                    name: name,
+                    votes_creative: 0,
+                    votes_diligent: 0,
+                    votes_favor: 0
+                }));
+
+                // We can't use real batch here easily without import, so just setDoc one by one is fine for 20 items
+                for (const c of batch) {
+                    await setDoc(doc(db, 'artifacts', APP_ID, 'candidates', c.id), c);
+                }
+                await setDoc(statsRef, { voterCount: 0 });
+            };
+
+            const handleLogin = (e) => {
+                e.preventDefault();
+                if (!userNameInput.trim()) return;
+
+                // Generate a random UID for this user "session"
+                // In a real app with Firebase Auth, we'd use auth.currentUser.uid
+                const uid = 'user_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+                const userInfo = { uid, name: userNameInput };
+
+                setUser(userInfo);
+                localStorage.setItem('voting_user_session', JSON.stringify(userInfo));
+            };
+
+            const handleLogout = () => {
+                localStorage.removeItem('voting_user_session');
+                setUser(null);
+                setUserVote(null);
+                setSelections({ creative: null, diligent: null, favor: null });
+            };
+
+            const toggleVote = (candidateId, categoryKey) => {
+                setSelections(prev => {
+                    if (prev[categoryKey] === candidateId) {
+                        return { ...prev, [categoryKey]: null };
+                    }
+                    return { ...prev, [categoryKey]: candidateId };
+                });
+                setErrorMsg('');
+            };
+
+            const submitVote = async () => {
+                if (!user) return;
+
+                const voteCount = Object.values(selections).filter(val => val !== null).length;
+                if (voteCount < 2) {
+                    setErrorMsg('請至少投選 2 個獎項喔！');
+                    return;
+                }
+
+                setIsSubmitting(true);
+                try {
+                    // Transaction to ensure counts are accurate
+                    await runTransaction(db, async (transaction) => {
+                        // 1. Check if user already voted (double check)
+                        const myVoteRef = doc(db, 'artifacts', APP_ID, 'votes', user.uid);
+                        const myVoteDoc = await transaction.get(myVoteRef);
+                        if (myVoteDoc.exists()) {
+                            throw "您已經投過票囉！";
+                        }
+
+                        // 2. Increment stats
+                        const statsRef = doc(db, 'artifacts', APP_ID, 'stats', 'global');
+                        transaction.update(statsRef, { voterCount: increment(1) });
+
+                        // 3. Increment candidates
+                        if (selections.creative) {
+                            const ref = doc(db, 'artifacts', APP_ID, 'candidates', selections.creative);
+                            transaction.update(ref, { votes_creative: increment(1) });
+                        }
+                        if (selections.diligent) {
+                            const ref = doc(db, 'artifacts', APP_ID, 'candidates', selections.diligent);
+                            transaction.update(ref, { votes_diligent: increment(1) });
+                        }
+                        if (selections.favor) {
+                            const ref = doc(db, 'artifacts', APP_ID, 'candidates', selections.favor);
+                            transaction.update(ref, { votes_favor: increment(1) });
+                        }
+
+                        // 4. Record user vote
+                        transaction.set(myVoteRef, {
+                            votedAt: new Date(),
+                            selections: selections,
+                            voterName: user.name
+                        });
+                    });
+
+                } catch (err) {
+                    console.error(err);
+                    // If error is string, show it
+                    if (typeof err === 'string') setErrorMsg(err);
+                    else setErrorMsg('投票出錯，請檢查網路或稍後再試');
+                } finally {
+                    setIsSubmitting(false);
+                }
+            };
+
+            const handleRevokeVote = async () => {
+                if (!user || !userVote) return;
+                if (!confirm('確定要重新投票嗎？這將會刪除您目前的投票紀錄。')) return;
+
+                setIsSubmitting(true);
+                try {
+                    await runTransaction(db, async (transaction) => {
+                        const myVoteRef = doc(db, 'artifacts', APP_ID, 'votes', user.uid);
+                        const myVoteDoc = await transaction.get(myVoteRef);
+                        if (!myVoteDoc.exists()) {
+                            throw "找不到您的投票紀錄，可能已被重置。";
+                        }
+                        const voteData = myVoteDoc.data();
+                        const { selections } = voteData;
+
+                        // Decrement stats
+                        const statsRef = doc(db, 'artifacts', APP_ID, 'stats', 'global');
+                        transaction.update(statsRef, { voterCount: increment(-1) });
+
+                        // Decrement candidates
+                        if (selections.creative) {
+                            const ref = doc(db, 'artifacts', APP_ID, 'candidates', selections.creative);
+                            transaction.update(ref, { votes_creative: increment(-1) });
+                        }
+                        if (selections.diligent) {
+                            const ref = doc(db, 'artifacts', APP_ID, 'candidates', selections.diligent);
+                            transaction.update(ref, { votes_diligent: increment(-1) });
+                        }
+                        if (selections.favor) {
+                            const ref = doc(db, 'artifacts', APP_ID, 'candidates', selections.favor);
+                            transaction.update(ref, { votes_favor: increment(-1) });
+                        }
+
+                        // Delete vote
+                        transaction.delete(myVoteRef);
+                    });
+                } catch (err) {
+                    console.error(err);
+                    alert('重置失敗: ' + err);
+                } finally {
+                    setIsSubmitting(false);
+                }
+            };
+
+            const handleResetAll = async () => {
+                const confirm1 = confirm('警告：這將會清除「所有」人的投票紀錄，並將票數歸零！');
+                if (!confirm1) return;
+                const confirm2 = confirm('再次確認：您真的要全部重新投票嗎？此動作無法復原！');
+                if (!confirm2) return;
+
+                setIsSubmitting(true);
+                try {
+                    const batch = writeBatch(db);
+
+                    // 1. Reset Candidates
+                    candidates.forEach(c => {
+                        const ref = doc(db, 'artifacts', APP_ID, 'candidates', c.id);
+                        batch.update(ref, {
+                            votes_creative: 0,
+                            votes_diligent: 0,
+                            votes_favor: 0
+                        });
+                    });
+
+                    // 2. Reset Global Stats
+                    const statsRef = doc(db, 'artifacts', APP_ID, 'stats', 'global');
+                    batch.set(statsRef, { voterCount: 0 });
+
+                    // 3. Delete All Votes
+                    const votesRef = collection(db, 'artifacts', APP_ID, 'votes');
+                    const votesSnapshot = await getDocs(votesRef);
+                    votesSnapshot.forEach(doc => {
+                        batch.delete(doc.ref);
+                    });
+
+                    await batch.commit();
+                    alert('已全部重置完成！');
+                } catch (err) {
+                    console.error(err);
+                    alert('重置失敗: ' + err);
+                } finally {
+                    setIsSubmitting(false);
+                }
+            };
+
+            // --- RENDER ---
+            if (!user) {
+                return (
+                    <div className="min-h-screen bg-gradient-to-br from-yellow-300 via-orange-400 to-pink-500 flex items-center justify-center p-4">
+                        <div className="bg-white/90 backdrop-blur-sm p-8 rounded-3xl shadow-2xl max-w-md w-full text-center border-4 border-white/50">
+                            <div className="mb-6 animate-bounce">
+                                <Icon name="PartyPopper" className="w-16 h-16 mx-auto text-pink-500" />
+                            </div>
+                            <h1 className="text-3xl font-black text-gray-800 mb-2">參賽者評選</h1>
+                            <p className="text-gray-600 mb-6">多人連線即時投票系統</p>
+                            <form onSubmit={handleLogin} className="space-y-4">
+                                <input
+                                    type="text"
+                                    value={userNameInput}
+                                    onChange={(e) => setUserNameInput(e.target.value)}
+                                    placeholder="請輸入您的名字"
+                                    className="w-full px-6 py-4 rounded-full text-lg border-2 border-orange-200 focus:border-orange-500 focus:outline-none transition-colors text-center"
+                                    autoFocus
+                                />
+                                <button
+                                    type="submit"
+                                    disabled={!userNameInput.trim()}
+                                    className="w-full bg-gradient-to-r from-orange-500 to-pink-600 text-white font-bold py-4 rounded-full text-xl shadow-lg hover:shadow-xl transform hover:-translate-y-1 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                    進入投票會場
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+                );
+            }
+
+            return (
+                <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-purple-50 to-pink-50 font-sans pb-24">
+                    <nav className="bg-white/90 backdrop-blur-md sticky top-0 z-50 shadow-sm border-b border-gray-100">
+                        <div className="max-w-5xl mx-auto px-4 py-3 flex justify-between items-center">
+                            <div className="flex items-center space-x-2">
+                                <Icon name="Crown" className="text-yellow-500 w-6 h-6 fill-yellow-500" />
+                                <span className="font-bold text-gray-800 text-lg sm:text-xl">最佳創意獎評選 (v3)</span>
+                            </div>
+                            <div className="flex items-center space-x-3">
+                                <button
+                                    onClick={handleResetAll}
+                                    className="bg-red-100 text-red-600 px-3 py-1 rounded-full text-sm font-bold hover:bg-red-200 transition-colors"
+                                    title="全部重新投票 (清除所有資料)"
+                                >
+                                    全部重新投票
+                                </button>
+                                <div className="flex items-center bg-gray-100 px-3 py-1 rounded-full text-sm cursor-pointer hover:bg-red-100 transition-colors" onClick={handleLogout} title="登出">
+                                    <Icon name="User" className="w-4 h-4 mr-1 text-gray-500" />
+                                    <span className="font-medium text-gray-700 truncate max-w-[100px]">{user.name}</span>
+                                </div>
+                            </div>
+                        </div>
+                    </nav>
+
+                    <div className="max-w-5xl mx-auto p-4 sm:p-6">
+                        <div className="text-center mb-8 mt-2">
+                            <span className="inline-block bg-white/80 backdrop-blur px-6 py-2 rounded-full text-indigo-800 font-medium shadow-sm border border-indigo-100">
+                                即時開票： <span className="text-2xl font-black text-pink-600 mx-1">{totalVoters}</span> 人已投票
+                            </span>
+                        </div>
+
+                        {userVote ? (
+                            <div className="space-y-8 animate-in fade-in duration-700">
+                                <div className="bg-gradient-to-r from-emerald-400 to-teal-500 p-8 rounded-3xl text-center text-white shadow-xl shadow-emerald-200 relative overflow-hidden">
+                                    <div className="relative z-10">
+                                        <Icon name="CheckCircle2" className="w-16 h-16 mx-auto mb-3 text-white drop-shadow-md" />
+                                        <h2 className="text-3xl font-black mb-1">評選完成！</h2>
+                                        <p className="opacity-90 font-medium mb-4">感謝您的神聖一票 🎉</p>
+                                        <button
+                                            onClick={handleRevokeVote}
+                                            className="bg-white/20 hover:bg-white/30 text-white border border-white/50 px-6 py-2 rounded-full text-sm font-bold transition-all backdrop-blur-sm"
+                                        >
+                                            重新投票
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                    {[
+                                        { key: 'creative', field: 'votes_creative', ...CATEGORIES.creative },
+                                        { key: 'diligent', field: 'votes_diligent', ...CATEGORIES.diligent },
+                                        { key: 'favor', field: 'votes_favor', ...CATEGORIES.favor }
+                                    ].map(cat => {
+                                        const topList = [...candidates]
+                                            .sort((a, b) => b[cat.field] - a[cat.field])
+                                            .slice(0, 3)
+                                            .filter(c => c[cat.field] > 0);
+                                        const maxVal = topList.length > 0 ? topList[0][cat.field] : 1;
+
+                                        return (
+                                            <div key={cat.key} className="bg-white/80 backdrop-blur rounded-3xl p-5 shadow-lg border border-white/50 flex flex-col h-full">
+                                                <div className={`flex items-center gap-2 mb-4 pb-3 border-b border-gray-100 ${cat.color}`}>
+                                                    <Icon name={cat.icon} className="w-6 h-6" />
+                                                    <h3 className="text-xl font-bold">{cat.label}</h3>
+                                                </div>
+                                                <div className="space-y-4 flex-1">
+                                                    {topList.length === 0 ? (
+                                                        <p className="text-gray-400 text-center py-8">等待開票中...</p>
+                                                    ) : (
+                                                        topList.map((c, idx) => (
+                                                            <div key={c.id}>
+                                                                <div className="flex justify-between items-end mb-1">
+                                                                    <div className="flex items-center gap-2">
+                                                                        <span className={`w-6 h-6 flex items-center justify-center rounded-full text-xs font-bold
+                                      ${idx === 0 ? 'bg-yellow-400 text-yellow-900' : idx === 1 ? 'bg-gray-300 text-gray-700' : idx === 2 ? 'bg-orange-200 text-orange-800' : 'bg-gray-100 text-gray-500'}`}>
+                                                                            {idx + 1}
+                                                                        </span>
+                                                                        <span className="font-bold text-gray-800">{c.name}</span>
+                                                                    </div>
+                                                                    <span className="font-mono font-bold text-gray-600">{c[cat.field]}</span>
+                                                                </div>
+                                                                <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                                                                    <div className={`h-full rounded-full ${cat.bg.replace('bg-', 'bg-').replace('100', '500')}`} style={{ width: `${(c[cat.field] / maxVal) * 100}%` }} />
+                                                                </div>
+                                                            </div>
+                                                        ))
+                                                    )}
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="space-y-6">
+                                <div className="bg-white/90 backdrop-blur-md p-6 rounded-3xl shadow-lg border-l-8 border-indigo-500 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                                    <div>
+                                        <h2 className="text-2xl font-bold text-gray-800 mb-1">請投下神聖的選票</h2>
+                                        <p className="text-gray-600 text-sm sm:text-base">
+                                            規則：共有三個獎項，請點選參賽者名字旁邊的按鈕。<br />
+                                            <span className="text-indigo-600 font-bold">* 每人最少需投 2 個獎項，最多 3 個。</span>
+                                        </p>
+                                    </div>
+                                    <div className="flex gap-2 sm:gap-4 flex-wrap">
+                                        {Object.values(CATEGORIES).map((cat) => {
+                                            const selectedId = selections[cat.id];
+                                            const selectedName = candidates.find(c => c.id === selectedId)?.name;
+                                            return (
+                                                <div key={cat.id} className={`flex items-center px-3 py-2 rounded-xl border-2 transition-all text-xs sm:text-sm font-bold ${selectedId ? `${cat.bg} ${cat.color} ${cat.ring.replace('ring-', 'border-')}` : 'bg-gray-50 border-gray-200 text-gray-400 border-dashed'}`}>
+                                                    <Icon name={cat.icon} className="w-4 h-4 mr-1.5" />
+                                                    {selectedName || "未選擇"}
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+
+                                <div className="grid gap-3 sm:gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-2">
+                                    {candidates.map((candidate) => {
+                                        const isCreative = selections.creative === candidate.id;
+                                        const isDiligent = selections.diligent === candidate.id;
+                                        const isFavor = selections.favor === candidate.id;
+                                        const isAnySelected = isCreative || isDiligent || isFavor;
+
+                                        return (
+                                            <div key={candidate.id} className={`relative p-4 rounded-2xl transition-all duration-200 border-2 bg-white ${isAnySelected ? 'shadow-md border-indigo-100' : 'shadow-sm border-transparent hover:border-gray-100'}`}>
+                                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                                    <div className="flex items-center gap-3">
+                                                        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-indigo-100 to-purple-100 flex items-center justify-center font-bold text-indigo-600 text-lg">
+                                                            {candidate.name.charAt(0)}
+                                                        </div>
+                                                        <h3 className="text-lg font-bold text-gray-800">{candidate.name}</h3>
+                                                    </div>
+                                                    {/* Voting Buttons */}
+                                                    <div className="flex flex-wrap items-center gap-2 mt-2 sm:mt-0 self-start sm:self-center">
+
+                                                        {/* 1. Creative Button */}
+                                                        <button
+                                                            onClick={() => toggleVote(candidate.id, 'creative')}
+                                                            className={`
+                            flex items-center gap-1 px-3 py-2 rounded-lg border-2 transition-all text-sm font-bold
+                            ${isCreative
+                                                                    ? 'bg-yellow-100 border-yellow-400 text-yellow-800 shadow-sm'
+                                                                    : 'bg-white border-gray-200 text-gray-500 hover:bg-yellow-50 hover:border-yellow-200'}
+                          `}
+                                                        >
+                                                            <Icon name="Lightbulb" className={`w-4 h-4 ${isCreative ? 'fill-yellow-500' : ''}`} />
+                                                            <span>最佳創意獎</span>
+                                                        </button>
+
+                                                        {/* 2. Diligent Button */}
+                                                        <button
+                                                            onClick={() => toggleVote(candidate.id, 'diligent')}
+                                                            className={`
+                            flex items-center gap-1 px-3 py-2 rounded-lg border-2 transition-all text-sm font-bold
+                            ${isDiligent
+                                                                    ? 'bg-pink-100 border-pink-400 text-pink-800 shadow-sm'
+                                                                    : 'bg-white border-gray-200 text-gray-500 hover:bg-pink-50 hover:border-pink-200'}
+                          `}
+                                                        >
+                                                            <Icon name="Heart" className={`w-4 h-4 ${isDiligent ? 'fill-pink-500' : ''}`} />
+                                                            <span>最用心獎</span>
+                                                        </button>
+
+                                                        {/* 3. Favor Button */}
+                                                        <button
+                                                            onClick={() => toggleVote(candidate.id, 'favor')}
+                                                            className={`
+                            flex items-center gap-1 px-3 py-2 rounded-lg border-2 transition-all text-sm font-bold
+                            ${isFavor
+                                                                    ? 'bg-blue-100 border-blue-400 text-blue-800 shadow-sm'
+                                                                    : 'bg-white border-gray-200 text-gray-500 hover:bg-blue-50 hover:border-blue-200'}
+                          `}
+                                                        >
+                                                            <Icon name="ThumbsUp" className={`w-4 h-4 ${isFavor ? 'fill-blue-500' : ''}`} />
+                                                            <span>好感度獎</span>
+                                                        </button>
+
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                                {errorMsg && (
+                                    <div className="fixed bottom-24 left-1/2 transform -translate-x-1/2 z-40 bg-red-500 text-white px-6 py-3 rounded-full shadow-xl flex items-center animate-bounce">
+                                        <Icon name="AlertCircle" className="w-5 h-5 mr-2" />
+                                        <span className="font-bold">{errorMsg}</span>
+                                    </div>
+                                )}
+                                <div className="fixed bottom-6 left-4 right-4 max-w-5xl mx-auto z-30">
+                                    <button onClick={submitVote} disabled={isSubmitting} className={`w-full py-4 rounded-2xl text-xl font-black text-white shadow-2xl transition-all border-4 border-white/20 backdrop-blur-sm ${isSubmitting ? 'bg-gray-500 cursor-wait' : 'bg-gradient-to-r from-indigo-600 to-purple-600 hover:scale-[1.02] hover:shadow-indigo-500/50 active:scale-[0.98]'}`}>
+                                        {isSubmitting ? '投票中...' : `確認送出選票`}
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<BestIdeaVotingApp />);
+    </script>
+</body>
+
+</html>
